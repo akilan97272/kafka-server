@@ -1,4 +1,0 @@
-INFO:     192.168.0.141:33038 - "GET / HTTP/1.1" 404 Not Found
-INFO:     192.168.0.141:33038 - "GET /favicon.ico HTTP/1.1" 404 Not Found
-INFO:     192.168.0.141:33052 - "GET /ws HTTP/1.1" 404 Not Found
-INFO:     192.168.0.141:35768 - "GET /ws HTTP/1.1" 404 Not Found
