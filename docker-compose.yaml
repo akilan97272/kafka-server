@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka-kraft
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka-kraft:9093"
+
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://192.168.0.141:9092"
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_METADATA_LOG_DIR: "/var/lib/kraft-combined-logs"
+
+      CLUSTER_ID: "VjZkY2E3Y2EtZTI3Zi00Y2I4LTkzYjItZTI3Y2E3Y2E3Y2E3"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    volumes:
+      - /home/p0chita/Desktop/kafka_docker/log_store:/var/lib/kafka/data
+      - /home/p0chita/Desktop/kafka_docker/log_store_metadata:/var/lib/kraft-combined-logs
+
+#for ui interface!
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-kraft:9092
+    depends_on:
+      - kafka
+
+
+  stream-backend:
+    build: ./backend
+    container_name: ksql-stream-backend
+    depends_on:
+      - ksqldb-server
+    environment:
+      - KSQL_URL=http://ksqldb-server:8088/query
+      - BOOTSTRAP_SERVERS=kafka-kraft:9092
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
