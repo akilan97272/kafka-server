@@ -1,0 +1,9 @@
+log_store/
+log_store_metadata/
+get_logs
+logs.txt
+pgdata/
+data/
+kafka_data/
+kafka_kraft/
+timescaledb/
