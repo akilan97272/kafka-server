@@ -34,27 +34,44 @@ services:
       - /home/p0chita/Desktop/kafka_docker/log_store:/var/lib/kafka/data
       - /home/p0chita/Desktop/kafka_docker/log_store_metadata:/var/lib/kraft-combined-logs
 
-#for ui interface!
-  kafka-ui:
-    image: provectuslabs/kafka-ui
-    container_name: kafka-ui
-    ports:
-      - "8081:8080"
+  # -----------------------------------------------------------
+  # TimescaleDB (PostgreSQL 14 base)
+  # -----------------------------------------------------------
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    restart: unless-stopped
     environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-kraft:9092
+      POSTGRES_DB: logsdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"   # PostgreSQL external access
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+
+  # -----------------------------------------------------------
+  # pgAdmin (Optional but recommended GUI)
+  # -----------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: unless-stopped
+    depends_on:
+      - timescaledb
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"   # GUI at http://localhost:5050
+
+
+  consumer:
+    build: ./consumer
     depends_on:
       - kafka
-
-
-  stream-backend:
-    build: ./backend
-    container_name: ksql-stream-backend
-    depends_on:
-      - ksqldb-server
+      - timescaledb
     environment:
-      - KSQL_URL=http://ksqldb-server:8088/query
-      - BOOTSTRAP_SERVERS=kafka-kraft:9092
-    ports:
-      - "8000:8000"
-    restart: unless-stopped
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - POSTGRES_DSN=postgresql://postgres:postgres@timescaledb:5432/logsdb
+
