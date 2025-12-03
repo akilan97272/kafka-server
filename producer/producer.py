@@ -17,8 +17,11 @@ import argparse
 import sys
 import json
 from confluent_kafka import Producer
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-DEFAULT_BOOTSTRAP = "localhost:9092"  # change to kafka:9092 when inside docker
+BOOTSTRAP = os.getenv("BOOTSTRAP_SERVERS")
 
 def delivery_report(err, msg):
     if err is not None:
@@ -39,7 +42,7 @@ def main():
     p.add_argument("--topic", required=True)
     p.add_argument("--msg", help="Single JSON message string")
     p.add_argument("--file", help="File with JSON lines (one JSON object per line)")
-    p.add_argument("--bootstrap", default=DEFAULT_BOOTSTRAP)
+    p.add_argument("--bootstrap", default=BOOTSTRAP)
     p.add_argument("--key", help="optional key for the message")
     args = p.parse_args()
 
