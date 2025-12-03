@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Kafka → TimescaleDB JSONB Consumer
-------------------------------------
-Stores each Kafka message as:
-  ts   (timestamp)
-  topic (Kafka topic)
-  data (JSONB)
+Kafka → TimescaleDB Structured Consumer (Safe Extract Version)
+--------------------------------------------------------------
+Stores logs in:
+  - structured columns
+  - full JSON (payload)
+Handles uppercase/lowercase keys automatically.
 """
 
 import os
@@ -14,18 +14,12 @@ from datetime import datetime, timezone
 import psycopg2
 from psycopg2.extras import Json
 from confluent_kafka import Consumer, KafkaException
+from dotenv import load_dotenv
+load_dotenv()
 
-
-# ===========================
-#  CONFIG
-# ===========================
-BOOTSTRAP = os.getenv("BOOTSTRAP_SERVERS", "localhost:9092")
-POSTGRES_DSN = os.getenv(
-    "POSTGRES_DSN",
-    "postgresql://postgres:postgres@localhost:5432/logsdb"
-)
-GROUP_ID = "jsonb-log-consumer"
-
+BOOTSTRAP = os.getenv("BOOTSTRAP_SERVERS")
+POSTGRES_DSN = os.getenv("POSTGRES_DSN")
+GROUP_ID = os.getenv("GROUP_ID", "structured-log-consumer")
 
 # ===========================
 #  DATABASE HELPERS
@@ -36,15 +30,20 @@ def get_conn():
 
 def setup_table():
     ddl = """
-    CREATE TABLE IF NOT EXISTS logs (
-        ts TIMESTAMPTZ NOT NULL,
-        topic TEXT NOT NULL,
-        data JSONB NOT NULL
+    CREATE TABLE IF NOT EXISTS hazard_process_events (
+        time              TIMESTAMPTZ NOT NULL,
+        event_type        TEXT,
+        event_id          UUID,
+        process_name      TEXT,
+        process_state     TEXT,
+        severity          INT,
+        severity_reason   TEXT,
+        payload           JSONB
     );
     """
 
     hypertable = """
-    SELECT create_hypertable('logs', 'ts', if_not_exists => TRUE);
+    SELECT create_hypertable('hazard_process_events', 'time', if_not_exists => TRUE);
     """
 
     conn = get_conn()
@@ -57,30 +56,84 @@ def setup_table():
 
     cur.close()
     conn.close()
-    print("✅ JSONB hypertable ready: logs")
+    print("✅ Structured hypertable ready: hazard_process_events")
 
 
-def insert_log(topic, payload):
+
+# ===========================
+#  SAFE JSON KEY GETTER
+# ===========================
+def safe_get(obj, *keys):
+    """
+    Case-insensitive nested getter.
+    Example:
+      safe_get(payload, "event", "PROCESS_NAME")
+    Works even if keys are lowercase, uppercase, or mixed.
+    """
+    if not isinstance(obj, dict):
+        return None
+
+    for k in keys:
+        found = False
+        for actual_key in obj.keys():
+            if actual_key.lower() == k.lower():
+                obj = obj[actual_key]
+                found = True
+                break
+        if not found:
+            return None
+    return obj
+
+
+
+# ===========================
+#  INSERT EVENT
+# ===========================
+def insert_event(payload):
     conn = get_conn()
     cur = conn.cursor()
 
+    # 🔥 Extract values safely (uppercase/lowercase doesn't matter)
+    event_type      = safe_get(payload, "routing", "event_type")
+    event_id        = safe_get(payload, "routing", "event_id")
+    process_name    = safe_get(payload, "event", "PROCESS_NAME")
+    process_state   = safe_get(payload, "event", "PROCESS_STATE")
+    severity        = safe_get(payload, "event", "SEVERITY") or safe_get(payload, "routing", "severity")
+    severity_reason = safe_get(payload, "event", "SEVERITY_REASON") or safe_get(payload, "routing", "severity_reason")
+
     sql = """
-    INSERT INTO logs (ts, topic, data)
-    VALUES (%s, %s, %s);
+    INSERT INTO hazard_process_events (
+        time, event_type, event_id, process_name,
+        process_state, severity, severity_reason, payload
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
     """
 
     try:
-        cur.execute(sql, (datetime.now(timezone.utc), topic, Json(payload)))
+        cur.execute(sql, (
+            datetime.now(timezone.utc),
+            event_type,
+            event_id,
+            process_name,
+            process_state,
+            severity,
+            severity_reason,
+            Json(payload)
+        ))
         conn.commit()
+        print("✔ Inserted structured event →", process_name, severity)
+
     except Exception as e:
         print("❌ DB insert failed:", e)
+
     finally:
         cur.close()
         conn.close()
 
 
+
 # ===========================
-#  KAFKA CONSUMER LOGIC
+#  KAFKA CONSUMER
 # ===========================
 def run_consumer():
     setup_table()
@@ -93,13 +146,13 @@ def run_consumer():
 
     consumer = Consumer(conf)
 
-    # subscribe to all non-internal topics
+    # Subscribe to all user topics
     md = consumer.list_topics(timeout=5)
     topics = [t for t in md.topics.keys() if not t.startswith("_")]
 
     print("\n📡 Subscribing to topics:", topics)
     consumer.subscribe(topics)
-    print("🔥 JSONB consumer running...\n")
+    print("🔥 Structured consumer running...\n")
 
     try:
         while True:
@@ -110,14 +163,16 @@ def run_consumer():
             if msg.error():
                 raise KafkaException(msg.error())
 
-            # Decode JSON safely
+            # Decode JSON
             try:
                 payload = json.loads(msg.value().decode("utf-8"))
             except Exception:
                 payload = {"raw": msg.value().decode("utf-8")}
 
-            insert_log(msg.topic(), payload)
-            print(f"✔ Stored log from topic '{msg.topic()}'")
+            # Debug print (optional)
+            # print(json.dumps(payload, indent=2))
+
+            insert_event(payload)
 
     except KeyboardInterrupt:
         print("👋 Stopping consumer...")
@@ -126,5 +181,7 @@ def run_consumer():
         consumer.close()
 
 
+
 if __name__ == "__main__":
     run_consumer()
+

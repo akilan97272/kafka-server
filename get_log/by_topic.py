@@ -1,28 +1,45 @@
 import psycopg2
 import json
+import os
+from dotenv import load_dotenv
 
-POSTGRES_DSN = "postgresql://postgres:postgres@localhost:5432/logsdb"
+load_dotenv()
 
+POSTGRES_DSN = os.getenv("POSTGRES_DSN")
 
-def get_logs_by_topic(topic, limit=20):
+def get_high_severity_events(event_type=None, limit=20):
     conn = psycopg2.connect(POSTGRES_DSN)
     cur = conn.cursor()
 
+    # Base query
     sql = """
-        SELECT ts, data->'routing'->>'event_id'
-        FROM logs
-        WHERE topic = %s
-        AND (data->'routing'->>'severity')::int >= 3
-        ORDER BY ts DESC
-        LIMIT %s;
+        SELECT time, event_id, process_name, severity
+        FROM hazard_process_events
+        WHERE severity >= 3
     """
 
-    cur.execute(sql, (topic, limit))
+    params = []
+
+    # Optional filter by event_type (PROCESS, FILE, NETWORK, etc.)
+    if event_type:
+        sql += " AND event_type = %s"
+        params.append(event_type)
+
+    # Order + limit
+    sql += " ORDER BY time DESC LIMIT %s"
+    params.append(limit)
+
+    cur.execute(sql, params)
     rows = cur.fetchall()
 
-    for ts, data in rows:
-        print(f"\n[{ts}]")
-        print("event_id: ",json.dumps(data, indent=2))
+    # Pretty print output
+    for time, event_id, process_name, severity in rows:
+        print("\n==========================")
+        print(f"Time:        {time}")
+        print(f"Event ID:    {event_id}")
+        print(f"Process:     {process_name}")
+        print(f"Severity:    {severity}")
+        print("==========================")
 
     cur.close()
     conn.close()
@@ -30,4 +47,4 @@ def get_logs_by_topic(topic, limit=20):
 
 # Example usage:
 if __name__ == "__main__":
-    get_logs_by_topic("new_template")
+    get_high_severity_events(event_type="PROCESS")

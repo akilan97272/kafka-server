@@ -7,3 +7,4 @@ data/
 kafka_data/
 kafka_kraft/
 timescaledb/
+.env
