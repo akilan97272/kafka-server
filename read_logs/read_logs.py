@@ -1,39 +1,45 @@
 import psycopg2
 import json
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
-POSTGRES_DSN = "postgresql://postgres:postgres@localhost:5432/logsdb"
+load_dotenv()
+
+POSTGRES_DSN = os.getenv("POSTGRES_DSN")
 
 
 def fetch_logs_grouped():
     conn = psycopg2.connect(POSTGRES_DSN)
     cur = conn.cursor()
 
-    # fetch data grouped by topic
+    # fetch data grouped by event_type
     sql = """
-        SELECT topic, ts, value
-        FROM logs
-        ORDER BY topic, ts DESC;
+        SELECT event_type, time, process_name, severity, payload
+        FROM hazard_process_events
+        ORDER BY event_type, time DESC;
     """
     cur.execute(sql)
 
     rows = cur.fetchall()
+    current_event_type = None
 
-    current_topic = None
+    for event_type, t, process_name, severity, payload in rows:
 
-    for topic, ts, value in rows:
-        # Print topic header when topic changes
-        if topic != current_topic:
-            current_topic = topic
+        # Print header when group changes
+        if event_type != current_event_type:
+            current_event_type = event_type
             print("\n==============================")
-            print(f" TOPIC: {topic}")
+            print(f" EVENT TYPE: {event_type}")
             print("==============================")
 
-        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+        time_str = t.strftime("%Y-%m-%d %H:%M:%S")
 
-        print(f"\n  Time: {ts_str}")
-        print("📝 JSON:")
-        print(json.dumps(value, indent=2))
+        print(f"\n  Time: {time_str}")
+        print(f"  Process: {process_name}")
+        print(f"  Severity: {severity}")
+        print("📝 Payload JSON:")
+        print(json.dumps(payload, indent=2))
 
     cur.close()
     conn.close()
