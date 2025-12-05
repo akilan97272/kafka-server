@@ -34,11 +34,11 @@ def fetch_logs_grouped():
             print("==============================")
 
         time_str = t.strftime("%Y-%m-%d %H:%M:%S")
-
-        print(f"\n  Time: {time_str}")
+        print(f"\n  event type: {event_type}")
+        print(f"  Time: {time_str}")
         print(f"  Process: {process_name}")
         print(f"  Severity: {severity}")
-        print("📝 Payload JSON:")
+        print("->Payload JSON:")
         print(json.dumps(payload, indent=2))
 
     cur.close()
