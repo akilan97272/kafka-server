@@ -15,8 +15,9 @@ def fetch_logs_grouped():
 
     # fetch data grouped by event_type
     sql = """
-        SELECT event_type, time, process_name, severity, payload
-        FROM hazard_process_events
+        SELECT event_type, time, process_name, severity, payload->'event'->>'SEVERITY_REASON'
+        FROM logs
+        where severity >= 4
         ORDER BY event_type, time DESC;
     """
     cur.execute(sql)

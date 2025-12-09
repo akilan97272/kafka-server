@@ -1,0 +1,7 @@
+aiokafka
+aiohttp
+ujson
+psycopg[binary]
+python-dotenv
+pymisp
+dotenv
