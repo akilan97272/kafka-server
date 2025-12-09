@@ -30,7 +30,7 @@ def get_conn():
 
 def setup_table():
     ddl = """
-    CREATE TABLE IF NOT EXISTS hazard_process_events (
+    CREATE TABLE IF NOT EXISTS logs (
         time              TIMESTAMPTZ NOT NULL,
         event_type        TEXT,
         event_id          UUID,
@@ -43,7 +43,7 @@ def setup_table():
     """
 
     hypertable = """
-    SELECT create_hypertable('hazard_process_events', 'time', if_not_exists => TRUE);
+    SELECT create_hypertable('logs', 'time', if_not_exists => TRUE);
     """
 
     conn = get_conn()
@@ -56,7 +56,7 @@ def setup_table():
 
     cur.close()
     conn.close()
-    print("✅ Structured hypertable ready: hazard_process_events")
+    print("✅ Structured hypertable ready: logs")
 
 
 
@@ -102,7 +102,7 @@ def insert_event(payload):
     severity_reason = safe_get(payload, "event", "SEVERITY_REASON") or safe_get(payload, "routing", "severity_reason")
 
     sql = """
-    INSERT INTO hazard_process_events (
+    INSERT INTO logs (
         time, event_type, event_id, process_name,
         process_state, severity, severity_reason, payload
     )

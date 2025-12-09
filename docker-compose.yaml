@@ -1,6 +1,7 @@
-version: "3.8"
-
 services:
+# -----------------------------------------------------------
+# Kafka - KRaft Mode
+# -----------------------------------------------------------
   kafka:
     image: apache/kafka:latest
     container_name: kafka-kraft
@@ -8,35 +9,51 @@ services:
     ports:
       - "9092:9092"
       - "9093:9093"
-
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka-kraft:9093"
-
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://192.168.0.141:9092"
-
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_METADATA_LOG_DIR: "/var/lib/kraft-combined-logs"
-
       CLUSTER_ID: "VjZkY2E3Y2EtZTI3Zi00Y2I4LTkzYjItZTI3Y2E3Y2E3Y2E3"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
     volumes:
       - /home/p0chita/Desktop/kafka_docker/log_store:/var/lib/kafka/data
       - /home/p0chita/Desktop/kafka_docker/log_store_metadata:/var/lib/kraft-combined-logs
-
-  # -----------------------------------------------------------
-  # TimescaleDB (PostgreSQL 14 base)
-  # -----------------------------------------------------------
+# -----------------------------------------------------------
+# Setup for ksqlDB
+# -----------------------------------------------------------
+  ksqldb:
+    image: confluentinc/ksqldb-server:latest
+    container_name: ksqldb
+    depends_on:
+      - kafka
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_KSQL_SERVICE_ID: "ksqldb-cluster"
+    ports:
+      - "8088:8088"
+#-----------------------------------------------------------
+# ksqlDB CLI
+# -----------------------------------------------------------
+  ksqldb-cli:
+    image: confluentinc/ksqldb-cli:latest
+    container_name: ksqldb-cli
+    depends_on:
+      - ksqldb
+    entrypoint: ["sleep", "infinity"]
+# -----------------------------------------------------------
+# TimescaleDB
+# -----------------------------------------------------------
   timescaledb:
     image: timescale/timescaledb:latest-pg14
     container_name: timescaledb
@@ -46,13 +63,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"   # PostgreSQL external access
+      - "5432:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-
-  # -----------------------------------------------------------
-  # pgAdmin (Optional but recommended GUI)
-  # -----------------------------------------------------------
+# -----------------------------------------------------------
+# pgAdmin GUI
+# -----------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
@@ -63,15 +79,42 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
-      - "5050:80"   # GUI at http://localhost:5050
+      - "5050:80"
 
 
+# -----------------------------------------------------------
+# Enrichment Orchestrator   --> dependency file setup in local pc
+# -----------------------------------------------------------
+  orchestrator:
+    build: ./orchestrator
+    container_name: orchestrator
+    depends_on:
+      - kafka
+      - misp
+      - timescaledb
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+
+      # DB
+      POSTGRES_DSN: postgresql://postgres:postgres@timescaledb:5432/logsdb
+
+      # Threat Intel
+      OTX_API_KEY: your_otx_key_here
+      MISP_URL: https://misp
+      MISP_KEY: your_misp_key_here
+
+      # Disable OpenCTI
+      OPENCTI_URL: ""
+      OPENCTI_TOKEN: ""
+# -----------------------------------------------------------
+# Kafka → Timescale Consumer   --> dependency file setup in local pc
+# -----------------------------------------------------------
   consumer:
     build: ./consumer
+    container_name: consumer
     depends_on:
       - kafka
       - timescaledb
     environment:
-      - BOOTSTRAP_SERVERS=kafka:9092
-      - POSTGRES_DSN=postgresql://postgres:postgres@timescaledb:5432/logsdb
-
+      BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_DSN: postgresql://postgres:postgres@timescaledb:5432/logsdb

@@ -14,7 +14,7 @@ def get_high_severity_events(event_type=None, limit=20):
     # Base query
     sql = """
         SELECT time, event_id, process_name, severity
-        FROM hazard_process_events
+        FROM logs
         WHERE severity >= 3
     """
 
